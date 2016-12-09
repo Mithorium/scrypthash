@@ -13,7 +13,9 @@ import (
 )
 
 const (
-  DefaultCost     int = 14
+  DefaultCost int = 14
+  MinCost     int = 5
+  MaxCost     int = 22
 )
 
 // The error returned from CompareHashAndPassword when a password and hash do not match.
@@ -27,6 +29,12 @@ type HashVersionTooNewError byte
 
 func (hv HashVersionTooNewError) Error() string {
   return fmt.Sprintf("mithorium/scrypthash: scrypthash algorithm version '%c' requested is newer than current version '%c'", byte(hv), version)
+}
+
+type InvalidCostError int
+
+func (ic InvalidCostError) Error() string {
+  return fmt.Sprintf("mithorium/scrypthash: cost %d is outside allowed range (%d,%d)", int(ic), int(MinCost), int(MaxCost))
 }
 
 const (
@@ -81,7 +89,7 @@ func CompareHashAndPassword(hashedPassword, password []byte) error {
 
   decodedSalt, err := z85Decode(p.salt, saltBytes)
   if err != nil {
-    return err
+    return ErrHashInvalid
   }
 
   otherHash, err := scrypt.Key(password, decodedSalt, 1<<uint(p.cost), costMemory, costParallel, hashBytes)
@@ -118,10 +126,14 @@ func newFromPassword(password []byte, cost int) (*hashed, error) {
   p := new(hashed)
   p.version = version
 
+  err := checkCost(cost)
+  if err != nil {
+    return nil, err
+  }
   p.cost = cost
 
   unencodedSalt := make([]byte, saltBytes)
-  _, err := io.ReadFull(rand.Reader, unencodedSalt)
+  _, err = io.ReadFull(rand.Reader, unencodedSalt)
   if err != nil {
     return nil, err
   }
@@ -192,6 +204,10 @@ func (p *hashed) decodeCost(sbytes []byte) (int, error) {
   if err != nil {
     return -1, err
   }
+  err = checkCost(int(cost))
+  if err != nil {
+    return -1, err
+  }
   p.cost = int(cost)
   return 2, nil
 }
@@ -216,4 +232,11 @@ func z85Decode(encoded []byte, decodedSize int) ([]byte, error) {
     return nil, err
   }
   return decoded[:n], nil
+}
+
+func checkCost(cost int) error {
+  if cost < MinCost || cost > MaxCost {
+    return InvalidCostError(cost)
+  }
+  return nil
 }
