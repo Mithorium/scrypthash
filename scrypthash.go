@@ -38,7 +38,7 @@ const (
   hashBytes    = 32
   encodedSaltBytes = 20
   encodedHashBytes = 40
-  hashStringBytes  = 66
+  hashStringBytes  = 64
 )
 
 type hashed struct {
@@ -54,7 +54,7 @@ func (p *hashed) Hash() []byte {
   arr[1] = p.version
   n := 2
   copy(arr[n:], []byte(fmt.Sprintf("%02x", p.cost)))
-  n += 4
+  n += 2
   copy(arr[n:], p.salt)
   n += encodedSaltBytes
   copy(arr[n:], p.hash)
@@ -89,7 +89,12 @@ func CompareHashAndPassword(hashedPassword, password []byte) error {
     return err
   }
 
-  otherP := &hashed{p.version, p.cost, p.salt, otherHash}
+  eh, err := z85Encode(otherHash, encodedHashBytes)
+  if err != nil {
+    return err
+  }
+
+  otherP := &hashed{p.version, p.cost, p.salt, eh}
   if subtle.ConstantTimeCompare(p.Hash(), otherP.Hash()) == 1 {
     return nil
   }
@@ -125,7 +130,7 @@ func newFromPassword(password []byte, cost int) (*hashed, error) {
   if err != nil {
     return nil, err
   }
-  copy(p.salt, es)
+  p.salt = es
 
   hash, err := scrypt.Key(password, unencodedSalt, 1<<uint(cost), costMemory, costParallel, hashBytes)
   if err != nil {
@@ -136,13 +141,14 @@ func newFromPassword(password []byte, cost int) (*hashed, error) {
   if err != nil {
     return nil, err
   }
-  copy(p.hash, eh)
+  p.hash = eh
 
   return p, nil
 }
 
 func newFromHash(hashedSecret []byte) (*hashed, error) {
   if len(hashedSecret) != hashStringBytes {
+    fmt.Println(len(hashedSecret))
     return nil, ErrHashInvalid
   }
   p := new(hashed)
@@ -187,7 +193,7 @@ func (p *hashed) decodeCost(sbytes []byte) (int, error) {
     return -1, err
   }
   p.cost = int(cost)
-  return 3, nil
+  return 2, nil
 }
 
 func (p *hashed) String() string {
